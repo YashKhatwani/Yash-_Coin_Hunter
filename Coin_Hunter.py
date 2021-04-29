@@ -1,10 +1,12 @@
 import pygame
 from pygame.locals import *
+import pickle
+from os import path
 
 pygame.init()
 
 clock = pygame.time.Clock()
-fps = 55
+fps = 50
 
 screen_width = 800
 screen_height = 800
@@ -12,13 +14,51 @@ screen_height = 800
 screen = pygame.display.set_mode((screen_width, screen_height))
 pygame.display.set_caption('Coin Hunter')
 
+#define font
+font = pygame.font.SysFont('Bauhaus 93', 70)
+font_score = pygame.font.SysFont('Bauhaus 93', 30)
+
 #define game variables
 tile_size = 40
 game_over = 0
+main_menu = True
+level=1
+max_levels = 7
+score = 0
+
+#define colors
+white = (255, 255, 255)
+blue = (0, 0, 255)
+
 #load images
-#sun_img = pygame.image.load('img/sun.png')
 bg_img = pygame.image.load('image/bg.png')
+bg_img = pygame.transform.scale(bg_img, (screen_width, screen_height)) 
 restart_img = pygame.image.load('image/restart_btn.png')
+start_img = pygame.image.load('image/start_btn.png')
+start_img = pygame.transform.scale(start_img, (200, 100)) 
+exit_img = pygame.image.load('image/exit_btn.png') 
+exit_img = pygame.transform.scale(exit_img, (150,100)) 
+
+def draw_text(text, font, text_col, x, y):
+	img = font.render(text, True, text_col)
+	screen.blit(img, (x, y))
+
+#function to reset level
+def reset_level(level):
+	player.reset(100, screen_height - 130)
+	blob_group.empty()
+	lava_group.empty()
+	exit_group.empty()
+	coin_group.empty()
+
+	#load in level data and create world
+	if path.exists(f'level{level}_data'):
+		pickle_in = open(f'level{level}_data', 'rb')
+		world_data = pickle.load(pickle_in)
+	world = World(world_data)
+
+	return world
+
 # def draw_grid():
 # 	for line in range(0, 20):
 # 		pygame.draw.line(screen, (255, 255, 255), (0, line * tile_size), (screen_width, line * tile_size))
@@ -28,44 +68,34 @@ restart_img = pygame.image.load('image/restart_btn.png')
 class Button():
 	def __init__(self,x,y,image):
 		self.image = image
-		self.rect = self.image.getrect()
+		self.rect = self.image.get_rect()
 		self.rect.x = x
 		self.rect.y = y
+		self.clicked = False
 
 	def draw(self):
-
+		
+		action = False
 		#get mouse position
 		pos = pygame.mouse.get_pos()
+
 		#Checkover and clicking condition
 		if(self.rect.collidepoint(pos)):
-			if(pygame.mouse.get_pressed())[0]==1:
-				pass
+			if pygame.mouse.get_pressed()[0]==1 and self.clicked == False:
+				action = True
+				self.clicked = True
+
+		if pygame.mouse.get_pressed()[0]==0:
+			self.clicked = False
 
 		#Draw Button
 		screen.blit(self.image,self.rect)
 
+		return action
+
 class Player():
 	def __init__(self, x, y):
-		self.images_right = [] 
-		self.images_left = []
-		self.index = 0 # for image acessing
-		self.counter = 0 # for acessing movements to make animation slow and steady
-		for num in range(1, 5):
-			img_right = pygame.image.load(f'image/guy{num}.png')
-			img_right = pygame.transform.scale(img_right, (35, 70)) # to scale images
-			img_left = pygame.transform.flip(img_right, True, False)
-			self.images_right.append(img_right) #append images of right sides in list
-			self.images_left.append(img_left) #append images of left sides in list
-		self.dead_image = pygame.image.load('image/ghost.png')
-		self.image = self.images_right[self.index]#To start with picture at 0 location
-		self.rect = self.image.get_rect()
-		self.rect.x = x
-		self.rect.y = y
-		self.width = self.image.get_width()
-		self.height = self.image.get_height()
-		self.vel_y = 0
-		self.jumped = False
-		self.direction = 0
+		self.reset(x,y)
 
 
 	def update(self, game_over):
@@ -76,8 +106,8 @@ class Player():
 		if game_over == 0:
 			#get keypresses
 			key = pygame.key.get_pressed()
-			if key[pygame.K_SPACE] and self.jumped == False:
-				self.vel_y = -18
+			if key[pygame.K_SPACE] and self.jumped == False and self.in_air == False:
+				self.vel_y = -17
 				self.jumped = True
 			if key[pygame.K_SPACE] == False:
 				self.jumped = False
@@ -117,6 +147,7 @@ class Player():
 			dy += self.vel_y
 
 			#check for collision
+			self.in_air = True
 			for tile in world.tile_list:
 				#check for collision in x direction
 				if tile[1].colliderect(self.rect.x + dx, self.rect.y, self.width, self.height):
@@ -131,27 +162,57 @@ class Player():
 					elif self.vel_y >= 0:
 						dy = tile[1].top - self.rect.bottom
 						self.vel_y = 0
+						self.in_air = False
+
 			#Collision with enemies
 			if pygame.sprite.spritecollide(self,blob_group , False): 
 			#false used to keep enemies there if true is used instead they will disappear
 				game_over = -1
 			if pygame.sprite.spritecollide(self,lava_group , False): 
 			#false used to keep enemies there if true is used instead they will disappear
-				game_over = -1			
+				game_over = -1	
+			if pygame.sprite.spritecollide(self,exit_group , False): 
+			#false used to keep enemies there if true is used instead they will disappear
+				game_over = 1 #1 meams player has won
+
 			#update player coordinates
 			self.rect.x += dx
 			self.rect.y += dy
 
 		elif game_over == -1:
 			self.image = self.dead_image
+			draw_text('GAME OVER!', font, white, (screen_width // 2) - 200, screen_height // 2)
 			if self.rect.y > 150:
 				self.rect.y -= 5
 
 		#draw player onto screen
 		screen.blit(self.image, self.rect)
 		# pygame.draw.rect(screen , (255,255,255) , self.rect ,1)
-
+		
 		return game_over
+
+	def reset(self,x,y):
+		self.images_right = [] 
+		self.images_left = []
+		self.index = 0 # for image acessing
+		self.counter = 0 # for acessing movements to make animation slow and steady
+		for num in range(1, 5):
+			img_right = pygame.image.load(f'image/guy{num}.png')
+			img_right = pygame.transform.scale(img_right, (30, 60)) # to scale images
+			img_left = pygame.transform.flip(img_right, True, False)
+			self.images_right.append(img_right) #append images of right sides in list
+			self.images_left.append(img_left) #append images of left sides in list
+		self.dead_image = pygame.image.load('image/ghost.png')
+		self.image = self.images_right[self.index]#To start with picture at 0 location
+		self.rect = self.image.get_rect()
+		self.rect.x = x
+		self.rect.y = y
+		self.width = self.image.get_width()
+		self.height = self.image.get_height()
+		self.vel_y = 0
+		self.jumped = False
+		self.direction = 0
+		self.in_air = True
 
 class World():
 	def __init__(self, data):
@@ -185,6 +246,12 @@ class World():
 				if tile == 6:
 					lava = Lava(col_count * tile_size, row_count * tile_size + (tile_size // 2))
 					lava_group.add(lava)
+				if tile == 7:
+					coin = Coin(col_count * tile_size + (tile_size // 2), row_count * tile_size + (tile_size // 2))
+					coin_group.add(coin)
+				if tile == 8:
+					exit = Exit(col_count * tile_size ,row_count * tile_size)
+					exit_group.add(exit)
 				col_count += 1
 			row_count += 1
 
@@ -196,7 +263,8 @@ class World():
 class Enemy(pygame.sprite.Sprite):
 	def __init__(self,x,y):
 		pygame.sprite.Sprite.__init__(self)
-		self.image = pygame.image.load('image/blob.png')
+		blob = pygame.image.load('image/blob.png')
+		self.image = pygame.transform.scale(blob ,(35,30))
 		self.rect = self.image.get_rect()
 		self.rect.x = x
 		self.rect.y = y
@@ -219,59 +287,104 @@ class Lava(pygame.sprite.Sprite):
 		self.rect.x = x
 		self.rect.y = y
 
-world_data = [
-[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 1], 
-[1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 2, 2, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 7, 0, 5, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 2, 2, 0, 0, 0, 0, 0, 1], 
-[1, 7, 0, 0, 2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-[1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 7, 0, 0, 0, 0, 1], 
-[1, 0, 2, 0, 0, 7, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-[1, 0, 0, 2, 0, 0, 4, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 2, 2, 2, 2, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 0, 7, 0, 0, 0, 0, 2, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], 
-[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 2, 2, 2, 2, 2, 1], 
-[1, 0, 0, 0, 0, 0, 2, 2, 2, 6, 6, 6, 6, 6, 1, 1, 1, 1, 1, 1], 
-[1, 0, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
-[1, 0, 0, 0, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 
-[1, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
-]
+class Coin(pygame.sprite.Sprite):
+	def __init__(self,x,y):
+		pygame.sprite.Sprite.__init__(self)
+		coin_image = pygame.image.load('image/coin.png')
+		self.image = pygame.transform.scale(coin_image, (tile_size//2,tile_size//2))
+		self.rect = self.image.get_rect()
+		self.rect.center = (x,y)
+
+class Exit(pygame.sprite.Sprite):
+	def __init__(self,x,y):
+		pygame.sprite.Sprite.__init__(self)
+		Lava_image = pygame.image.load('image/exit.png')
+		self.image = pygame.transform.scale(Lava_image, (tile_size,int(tile_size * 1.5)))
+		self.rect = self.image.get_rect()
+		self.rect.x = x
+		self.rect.y = y
 
 
 player = Player(100 , (screen_height - 120)) #Creating instance of 
 
 blob_group = pygame.sprite.Group()
 lava_group = pygame.sprite.Group()
+coin_group = pygame.sprite.Group()
+exit_group = pygame.sprite.Group()
 
+#create dummy coin for showing the score
+score_coin = Coin(tile_size // 2, tile_size // 2)
+coin_group.add(score_coin)
+
+#Load level data
+if path.exists(f'level{level}_data'):
+	pickle_in = open(f'level{level}_data','rb')
+	world_data =pickle.load(pickle_in)
 world = World(world_data) #To create instance of world
 
 #Create Button
 restart_button = Button(screen_width//2 - 50 , screen_height // 2 + 100 , restart_img)
+start_button = Button(screen_width // 2 - 250, screen_height // 2 ,start_img)
+exit_button = Button(screen_width // 2 + 100, screen_height // 2 ,exit_img)
 
-run = True
+run = True 
 while run:
 
 	clock.tick(fps) #consistency of time in game
 	screen.blit(bg_img, (0, 0))
 	
-	world.draw()
+	if main_menu == True:
+		if exit_button.draw():
+			run = False
+		if start_button.draw():
+			main_menu = False
 
-	if game_over == 0:
-		blob_group.update()
-	blob_group.draw(screen)
-	lava_group.draw(screen)
+	else:
+		world.draw()
 
-	game_over = player.update(game_over)
+		if game_over == 0:
+			blob_group.update()
+			#update score
+			#Check if the coin is collected
+			if pygame.sprite.spritecollide(player,coin_group, True):
+				score += 1
+			draw_text("Score"+'X '+str(score), font_score , white , tile_size - 10, 10)
 
-	#When player is dying
-	if game_over == -1:
-		restart_button.draw()
-	
+		blob_group.draw(screen)
+		lava_group.draw(screen)
+		coin_group.draw(screen)
+		exit_group.draw(screen)
+
+		game_over = player.update(game_over)
+
+		#When player is dying
+		if game_over == -1:
+			if restart_button.draw():
+				world_data =[]
+				world = reset_level(level)
+				game_over=0
+				score = 0
+
+		#If player has completed the level
+		if game_over == 1:
+			#reset game and go to next level
+			level += 1
+			if level <= max_levels:
+				#reset level 
+				world_data = [] 
+				world = reset_level(level)
+				game_over = 0
+			else:
+				draw_text('YOU WIN!', font, blue, (screen_width // 2) - 140, screen_height // 2)
+				#restart game
+				if restart_button.draw():
+					level = 1
+					#reset level 
+					world_data = [] 
+					world = reset_level(level)
+				game_over = 0
+				score = 0
+
 	for event in pygame.event.get():
 		if event.type == pygame.QUIT:
 			run = False
